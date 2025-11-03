@@ -2,7 +2,6 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 const jsonServer = require('json-server');
-const auth = require('json-server-auth');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
@@ -15,73 +14,128 @@ const defaults = jsonServer.defaults();
 const ACCESS_TOKEN_SECRET = 'seu-access-token-secret-super-secreto';
 const REFRESH_TOKEN_SECRET = 'seu-refresh-token-secret-ainda-mais-secreto';
 
-// Permissions
-const rules = {
-	users: 600,
-	devs: 644,
-};
+// Note: Permissões gerenciadas manualmente nas rotas customizadas
 
+// CORS deve vir PRIMEIRO, antes de qualquer outro middleware
 server.use(
 	cors({
-		origin: 'http://localhost:5173', // URL do frontend
-		credentials: true, // Permite cookies
+		origin: 'http://localhost:5173',
+		credentials: true,
+		methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization'],
+		exposedHeaders: ['Set-Cookie'],
 	})
 );
+
+// Adicionar headers CORS manualmente para garantir
+server.use((req, res, next) => {
+	res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+	res.header('Access-Control-Allow-Credentials', 'true');
+	res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+	// Tratar preflight OPTIONS requests
+	if (req.method === 'OPTIONS') {
+		return res.sendStatus(200);
+	}
+
+	next();
+});
+
+// Agora sim os outros middlewares
 server.use(defaults);
 server.use(cookieParser());
 server.use(jsonServer.bodyParser);
 
-// Middleware para interceptar login e adicionar refresh token
-server.use((req, res, next) => {
-	// Interceptar POST /login
-	if (req.method === 'POST' && req.path === '/login') {
-		// Salvar res.json original
-		const originalJson = res.json.bind(res);
+// Rota customizada de login - SUBSTITUI a padrão do json-server-auth
+server.post('/login', async (req, res) => {
+	console.log('🔐 Custom login route hit');
+	const { email, password } = req.body;
 
-		// Override res.json
-		res.json = (body) => {
-			if (body.accessToken && body.user) {
-				// Gerar refresh token
-				const refreshToken = jwt.sign({ userId: body.user.id }, REFRESH_TOKEN_SECRET, {
-					expiresIn: '7d',
-				});
-
-				// Enviar refresh token como HttpOnly cookie
-				res.cookie('refreshToken', refreshToken, {
-					httpOnly: true,
-					secure: false, // true em produção com HTTPS
-					sameSite: 'strict',
-					maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
-				});
-			}
-
-			return originalJson(body);
-		};
+	if (!email || !password) {
+		return res.status(400).json({ message: 'Email e senha são obrigatórios' });
 	}
-	next();
+
+	try {
+		const bcrypt = require('bcryptjs');
+		const db = router.db;
+
+		// Buscar usuário
+		const user = db.get('users').find({ email }).value();
+
+		if (!user) {
+			console.log('❌ User not found:', email);
+			return res.status(400).json({ message: 'Email ou senha incorretos' });
+		}
+
+		// Verificar senha
+		const isValidPassword = await bcrypt.compare(password, user.password);
+
+		if (!isValidPassword) {
+			console.log('❌ Invalid password');
+			return res.status(400).json({ message: 'Email ou senha incorretos' });
+		}
+
+		console.log('✅ Login successful for:', email);
+
+		// Gerar tokens
+		const accessToken = jwt.sign(
+			{ sub: user.id.toString(), email: user.email },
+			ACCESS_TOKEN_SECRET,
+			{ expiresIn: '15m' }
+		);
+
+		const refreshToken = jwt.sign({ userId: user.id.toString() }, REFRESH_TOKEN_SECRET, {
+			expiresIn: '7d',
+		});
+
+		// Definir cookie
+		res.cookie('refreshToken', refreshToken, {
+			httpOnly: true,
+			secure: false,
+			sameSite: 'lax',
+			maxAge: 7 * 24 * 60 * 60 * 1000,
+		});
+
+		console.log('🍪 Refresh token cookie set');
+
+		// Retornar resposta
+		return res.json({
+			accessToken,
+			user: {
+				id: user.id,
+				email: user.email,
+				name: user.name || user.email.split('@')[0],
+			},
+		});
+	} catch (error) {
+		console.log('❌ Login error:', error.message);
+		return res.status(500).json({ message: 'Erro ao fazer login' });
+	}
 });
 
-// Rota customizada de refresh token
+// Rota de refresh ANTES do auth.rewriter
 server.post('/auth/refresh', (req, res) => {
+	console.log('🔄 Refresh token request received');
 	const refreshToken = req.cookies.refreshToken;
 
 	if (!refreshToken) {
+		console.log('❌ Refresh token not found in cookies');
 		return res.status(401).json({ message: 'Refresh token não encontrado' });
 	}
 
 	try {
-		// Verificar refresh token
 		const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+		console.log('✅ Refresh token válido:', decoded);
 
-		// Buscar usuário
-		const db = router.db; // Acesso ao banco
+		const db = router.db;
 		const user = db.get('users').find({ id: decoded.userId }).value();
 
 		if (!user) {
+			console.log('❌ User not found:', decoded.userId);
 			return res.status(401).json({ message: 'Usuário não encontrado' });
 		}
 
-		// Gerar novo access token
 		const newAccessToken = jwt.sign(
 			{
 				sub: user.id,
@@ -91,7 +145,8 @@ server.post('/auth/refresh', (req, res) => {
 			{ expiresIn: '15m' }
 		);
 
-		// Retornar novo access token
+		console.log('✅ New access token generated for user:', user.email);
+
 		return res.json({
 			accessToken: newAccessToken,
 			user: {
@@ -101,20 +156,21 @@ server.post('/auth/refresh', (req, res) => {
 			},
 		});
 	} catch (error) {
+		console.log('❌ Refresh token error:', error.message);
 		return res.status(401).json({ message: 'Refresh token inválido ou expirado' });
 	}
 });
 
-// Rewriter deve vir antes do auth e router
-server.use(auth.rewriter(rules));
-
-// Bind the router db to the app
+// Bind database to server
 server.db = router.db;
 
-server.use(auth);
+// Usar apenas o router (sem json-server-auth que sobrescreve nossas rotas)
+// Nossas rotas customizadas de /login e /auth/refresh já foram definidas acima
 server.use(router);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-	console.log(`JSON Server with auth running at http://localhost:${PORT}`);
+	console.log(`\n🚀 JSON Server with auth running at http://localhost:${PORT}`);
+	console.log(`📡 CORS enabled for: http://localhost:5173`);
+	console.log(`🍪 Cookies enabled with credentials\n`);
 });

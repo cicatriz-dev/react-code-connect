@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.2.2",
+		"bcryptjs": "^3.0.3",
 		"cookie-parser": "^1.4.7",
 		"jsonwebtoken": "^9.0.2",
 		"jwt-decode": "^4.0.0",
@@ -26,6 +27,7 @@
 	"devDependencies": {
 		"@eslint/js": "^9.36.0",
 		"@tailwindcss/postcss": "^4.1.16",
+		"@types/bcryptjs": "^2.4.6",
 		"@types/cookie-parser": "^1.4.10",
 		"@types/jsonwebtoken": "^9.0.10",
 		"@types/node": "^24.6.0",
