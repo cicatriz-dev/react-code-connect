@@ -3,13 +3,13 @@ import type { AuthResponse, LoginCredentials, RegisterData } from '../types/auth
 
 export const authService = {
 	login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-		return fetchClient.post<AuthResponse>('/auth/login', credentials);
+		return fetchClient.post<AuthResponse>('/login', credentials);
 	},
 	register: async (data: RegisterData): Promise<AuthResponse> => {
-		return fetchClient.post<AuthResponse>('/auth/register', data);
+		return fetchClient.post<AuthResponse>('/register', data);
 	},
 	logout: async (): Promise<void> => {
-		// Futuramente iremos invalidar o refresh token no servidor
+		// Futuramente: invalidar refresh token no servidor
 		return Promise.resolve();
 	},
 };
