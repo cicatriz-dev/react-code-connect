@@ -11,6 +11,14 @@
       "email": "teste@email.com",
       "password": "$2b$10$HrKZHFkjBM.9MQakl1PGsu9LlN.2KjIU3LC15LobsuVJ.YEqGfLQ2",
       "name": "Teste"
+    },
+    {
+      "id": 3,
+      "email": "pedrocmello.bsi@gmail.com",
+      "name": "Pedro Mello",
+      "googleId": "117469691758159505685",
+      "avatar": "https://lh3.googleusercontent.com/a/ACg8ocIHo7bWiq91VRkyVFyIwbguabnTKes7w732Fmq2LMfHGGtB_JgN=s96-c",
+      "password": null
     }
   ],
   "devs": [
