@@ -114,6 +114,79 @@ server.post('/login', async (req, res) => {
 	}
 });
 
+// Rota customizada de registro
+server.post('/register', async (req, res) => {
+	console.log('📝 Custom register route hit');
+	const { email, password, name } = req.body;
+
+	if (!email || !password || !name) {
+		return res.status(400).json({ message: 'Email, senha e nome são obrigatórios' });
+	}
+
+	try {
+		const bcrypt = require('bcryptjs');
+		const db = router.db;
+
+		// Verificar se usuário já existe
+		const existingUser = db.get('users').find({ email }).value();
+
+		if (existingUser) {
+			console.log('❌ User already exists:', email);
+			return res.status(400).json({ message: 'Usuário já cadastrado com este email' });
+		}
+
+		// Hash da senha
+		const hashedPassword = await bcrypt.hash(password, 10);
+
+		// Criar novo usuário
+		const newUser = {
+			id: db.get('users').size().value() + 1,
+			email,
+			password: hashedPassword,
+			name,
+		};
+
+		// Salvar no banco
+		db.get('users').push(newUser).write();
+
+		console.log('✅ User registered successfully:', email);
+
+		// Gerar tokens (auto-login após registro)
+		const accessToken = jwt.sign(
+			{ sub: newUser.id.toString(), email: newUser.email },
+			ACCESS_TOKEN_SECRET,
+			{ expiresIn: '15m' }
+		);
+
+		const refreshToken = jwt.sign({ userId: newUser.id.toString() }, REFRESH_TOKEN_SECRET, {
+			expiresIn: '7d',
+		});
+
+		// Definir cookie
+		res.cookie('refreshToken', refreshToken, {
+			httpOnly: true,
+			secure: false,
+			sameSite: 'lax',
+			maxAge: 7 * 24 * 60 * 60 * 1000,
+		});
+
+		console.log('🍪 Refresh token cookie set for new user');
+
+		// Retornar resposta
+		return res.json({
+			accessToken,
+			user: {
+				id: newUser.id,
+				email: newUser.email,
+				name: newUser.name,
+			},
+		});
+	} catch (error) {
+		console.log('❌ Register error:', error.message);
+		return res.status(500).json({ message: 'Erro ao criar conta' });
+	}
+});
+
 // Rota de refresh ANTES do auth.rewriter
 server.post('/auth/refresh', (req, res) => {
 	console.log('🔄 Refresh token request received');
