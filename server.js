@@ -5,6 +5,7 @@ const jsonServer = require('json-server');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const { google } = require('googleapis');
 
 const server = jsonServer.create();
 const router = jsonServer.router('database.json');
@@ -13,6 +14,17 @@ const defaults = jsonServer.defaults();
 // Secrets para JWT
 const ACCESS_TOKEN_SECRET = 'seu-access-token-secret-super-secreto';
 const REFRESH_TOKEN_SECRET = 'seu-refresh-token-secret-ainda-mais-secreto';
+
+// Configuração do Google OAuth
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your-google-client-secret';
+const GOOGLE_REDIRECT_URI = 'http://localhost:3001/auth/google/callback';
+
+const oauth2Client = new google.auth.OAuth2(
+	GOOGLE_CLIENT_ID,
+	GOOGLE_CLIENT_SECRET,
+	GOOGLE_REDIRECT_URI
+);
 
 // Note: Permissões gerenciadas manualmente nas rotas customizadas
 
@@ -69,6 +81,13 @@ server.post('/login', async (req, res) => {
 			return res.status(400).json({ message: 'Email ou senha incorretos' });
 		}
 
+		// Verificar se é usuário OAuth (sem senha)
+		if (!user.password) {
+			return res
+				.status(400)
+				.json({ message: 'Esta conta usa login social. Use o botão "Entrar com Google".' });
+		}
+
 		// Verificar senha
 		const isValidPassword = await bcrypt.compare(password, user.password);
 
@@ -102,6 +121,7 @@ server.post('/login', async (req, res) => {
 				id: user.id,
 				email: user.email,
 				name: user.name || user.email.split('@')[0],
+				avatar: user.avatar || null,
 			},
 		});
 	} catch (error) {
@@ -168,6 +188,7 @@ server.post('/register', async (req, res) => {
 				id: newUser.id,
 				email: newUser.email,
 				name: newUser.name,
+				avatar: null,
 			},
 		});
 	} catch (error) {
@@ -210,10 +231,107 @@ server.post('/auth/refresh', (req, res) => {
 				id: user.id,
 				email: user.email,
 				name: user.name || user.email.split('@')[0],
+				avatar: user.avatar || null,
 			},
 		});
 	} catch (error) {
 		return res.status(401).json({ message: 'Refresh token inválido ou expirado' });
+	}
+});
+
+// ==================== GOOGLE OAUTH ROUTES ====================
+
+// Rota para iniciar o fluxo OAuth com Google
+server.get('/auth/google', (req, res) => {
+	const authUrl = oauth2Client.generateAuthUrl({
+		access_type: 'offline',
+		scope: [
+			'https://www.googleapis.com/auth/userinfo.profile',
+			'https://www.googleapis.com/auth/userinfo.email',
+		],
+		prompt: 'consent',
+	});
+
+	res.redirect(authUrl);
+});
+
+// Rota de callback do Google OAuth
+server.get('/auth/google/callback', async (req, res) => {
+	const { code } = req.query;
+
+	if (!code) {
+		return res.redirect('http://localhost:5173/login?error=no_code');
+	}
+
+	try {
+		// Trocar código por tokens
+		const { tokens } = await oauth2Client.getToken(code);
+		oauth2Client.setCredentials(tokens);
+
+		// Buscar informações do usuário
+		const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+		const { data } = await oauth2.userinfo.get();
+
+		const db = router.db;
+
+		// Buscar ou criar usuário
+		let user = db.get('users').find({ googleId: data.id }).value();
+
+		if (!user) {
+			// Verificar se já existe usuário com o mesmo email
+			user = db.get('users').find({ email: data.email }).value();
+
+			if (user) {
+				// Atualizar usuário existente com googleId
+				db.get('users')
+					.find({ email: data.email })
+					.assign({
+						googleId: data.id,
+						avatar: data.picture,
+					})
+					.write();
+
+				user = db.get('users').find({ email: data.email }).value();
+			} else {
+				// Criar novo usuário
+				const newUser = {
+					id: db.get('users').size().value() + 1,
+					email: data.email,
+					name: data.name,
+					googleId: data.id,
+					avatar: data.picture,
+					password: null, // OAuth users não tem senha
+				};
+
+				db.get('users').push(newUser).write();
+				user = newUser;
+			}
+		}
+
+		// Gerar tokens JWT
+		const accessToken = jwt.sign(
+			{ sub: user.id.toString(), email: user.email },
+			ACCESS_TOKEN_SECRET,
+			{ expiresIn: '15m' }
+		);
+
+		const refreshToken = jwt.sign({ userId: user.id.toString() }, REFRESH_TOKEN_SECRET, {
+			expiresIn: '7d',
+		});
+
+		// Definir cookie
+		res.cookie('refreshToken', refreshToken, {
+			httpOnly: true,
+			secure: false,
+			sameSite: 'lax',
+			maxAge: 7 * 24 * 60 * 60 * 1000,
+		});
+
+		// Redirecionar para o frontend com o access token
+		const redirectUrl = `http://localhost:5173/auth/callback?token=${accessToken}`;
+		res.redirect(redirectUrl);
+	} catch (error) {
+		return res.redirect('http://localhost:5173/login?error=auth_failed');
 	}
 });
 
