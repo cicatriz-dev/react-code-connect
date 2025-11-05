@@ -7,7 +7,7 @@ export const editProfileSchema = z.object({
 	email: z.email(),
 	password: z.string().optional().or(z.literal('')),
 	description: z.string().optional(),
-	categories: z.array(z.enum(AVAILABLE_CATEGORIES)).optional(),
+	categories: z.array(z.string()).optional(),
 });
 
 export type EditProfileFormData = z.infer<typeof editProfileSchema>;
