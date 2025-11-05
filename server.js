@@ -1,4 +1,8 @@
 import { createRequire } from 'module';
+
+import dotenv from 'dotenv';
+dotenv.config();
+
 const require = createRequire(import.meta.url);
 
 const jsonServer = require('json-server');
@@ -121,7 +125,6 @@ server.post('/login', async (req, res) => {
 				id: user.id,
 				email: user.email,
 				name: user.name || user.email.split('@')[0],
-				avatar: user.avatar || null,
 			},
 		});
 	} catch (error) {
@@ -188,7 +191,6 @@ server.post('/register', async (req, res) => {
 				id: newUser.id,
 				email: newUser.email,
 				name: newUser.name,
-				avatar: null,
 			},
 		});
 	} catch (error) {
@@ -231,7 +233,6 @@ server.post('/auth/refresh', (req, res) => {
 				id: user.id,
 				email: user.email,
 				name: user.name || user.email.split('@')[0],
-				avatar: user.avatar || null,
 			},
 		});
 	} catch (error) {
@@ -287,7 +288,6 @@ server.get('/auth/google/callback', async (req, res) => {
 					.find({ email: data.email })
 					.assign({
 						googleId: data.id,
-						avatar: data.picture,
 					})
 					.write();
 
@@ -299,7 +299,6 @@ server.get('/auth/google/callback', async (req, res) => {
 					email: data.email,
 					name: data.name,
 					googleId: data.id,
-					avatar: data.picture,
 					password: null, // OAuth users não tem senha
 				};
 
