@@ -3,8 +3,12 @@
     {
       "email": "contato@cicatriz.dev",
       "password": "$2a$10$ftEtN7xbl5GPml5pmDnclOqCrEI4XQTl.ljFu80DCX8i9TSnGQI4S",
-      "name": "Pedro",
-      "id": 1
+      "name": "Pedro Cicatriz",
+      "id": 1,
+      "description": "Outro Pedro",
+      "categories": [
+        "DevOps"
+      ]
     },
     {
       "id": 2,

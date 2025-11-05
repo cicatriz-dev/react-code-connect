@@ -11,7 +11,7 @@ import { CategorySelector } from './CategorySelector';
 export function EditProfileForm() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
-	const { user, setAuth } = useAuth();
+	const { user, setAuth, accessToken } = useAuth();
 
 	const {
 		register,
@@ -45,7 +45,7 @@ export function EditProfileForm() {
 			// Atualizar contexto de auth mantendo o accessToken atual
 			setAuth({
 				user: updatedUser,
-				accessToken: '', // Mantém o token existente no contexto
+				accessToken: accessToken || '', // Mantém o token existente no contexto
 			});
 
 			toast.success('Perfil atualizado com sucesso!');
